@@ -345,6 +345,13 @@ function initSocketConnection() {
     }
   });
 
+  socket.on('settings_updated', (settings) => {
+    if (settings.confidence_threshold) {
+      confidenceThreshold = parseFloat(settings.confidence_threshold);
+      console.log('🧠 AI Confidence Threshold updated to:', confidenceThreshold);
+    }
+  });
+
   // Remote Commands from Viewer Dashboard
   socket.on('camera_control', async (data) => {
     console.log('Received remote command:', data);

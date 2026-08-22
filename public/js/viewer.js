@@ -561,10 +561,33 @@ async function initSettings() {
         } catch (err) {
           console.warn('Error parsing global_targets:', err);
         }
+      if (data.settings.confidence_threshold) {
+        const confInput = document.getElementById('inputConfidence');
+        const confLbl = document.getElementById('lblConfidence');
+        if (confInput && confLbl) {
+          const val = Math.round(parseFloat(data.settings.confidence_threshold) * 100);
+          confInput.value = val;
+          confLbl.textContent = val;
+        }
       }
     }
   } catch (e) {
     console.warn('Error loading settings:', e);
+  }
+
+  const confInput = document.getElementById('inputConfidence');
+  if (confInput) {
+    confInput.addEventListener('input', (e) => {
+      document.getElementById('lblConfidence').textContent = e.target.value;
+    });
+    confInput.addEventListener('change', async (e) => {
+      const val = parseInt(e.target.value, 10) / 100;
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { confidence_threshold: val.toString() } })
+      });
+    });
   }
 
   const masterToggle = document.getElementById('masterRecordingToggle');

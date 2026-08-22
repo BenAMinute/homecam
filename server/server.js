@@ -285,6 +285,10 @@ io.on('connection', (socket) => {
     if (camera && camera.enabled_targets) {
       socket.emit('update_targets', { targets: camera.enabled_targets });
     }
+    
+    // Send current confidence settings
+    const settings = await db.getAllSettings();
+    socket.emit('settings_updated', settings);
 
     console.log(`📱 Camera Node registered: "${camera.name}" (${camera_id}) with targets:`, camera.enabled_targets);
     io.emit('camera_status_change', camera);

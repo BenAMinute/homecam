@@ -176,6 +176,12 @@
               <span class="slider"></span>
             </label>
           </div>
+
+          <div class="setting-item" style="flex-direction: column; align-items: flex-start; gap: 8px; margin-top: 15px; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 15px;">
+            <label style="font-size: 0.9rem; font-weight: 600;">🧠 AI Confidence Threshold: <span id="lblConfidence">65</span>%</label>
+            <input type="range" id="inputConfidence" min="40" max="95" value="65" style="width: 100%;">
+            <span style="font-size: 0.75rem; color: var(--text-muted);">Increase this if you get false positive detections (e.g. if the AI thinks a human is a cat).</span>
+          </div>
         </div>
 
         <!-- Storage & Retention Card -->
@@ -230,6 +236,6 @@
     </div>
   </div>
 
-  <script src="/js/viewer.js"></script>
+  <script src="/js/viewer.js?v=3"></script>
 </body>
 </html>
