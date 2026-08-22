@@ -1,0 +1,29 @@
+{
+  "name": "homecam",
+  "version": "1.0.0",
+  "description": "Self-hosted Home Security Camera System using old smartphones and WebRTC",
+  "main": "server/server.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "cert": "node scripts/generate-cert.js",
+    "dev": "node server/server.js"
+  },
+  "keywords": [
+    "security-camera",
+    "webrtc",
+    "tensorflowjs",
+    "docker",
+    "home-server"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "selfsigned": "^2.4.1",
+    "socket.io": "^4.8.1",
+    "sqlite3": "^5.1.7"
+  }
+}

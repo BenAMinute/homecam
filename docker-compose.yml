@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  homecam:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: homecam_server
+    restart: unless-stopped
+    ports:
+      - "8443:8443"
+      - "8080:8080"
+    environment:
+      - PORT=8443
+      - HTTP_PORT=8080
+      - STORAGE_PATH=/app/media
+      - DB_PATH=/app/data/homecam.db
+      - CERTS_PATH=/app/certs
+      - RETENTION_DAYS=14
+      - MAX_STORAGE_GB=50
+      - CONFIDENCE_THRESHOLD=0.65
+    volumes:
+      # Host Volume Mounts (Change ./media to any local folder or network share e.g. /mnt/nas/homecam)
+      - ./media:/app/media
+      - ./data:/app/data
+      - ./certs:/app/certs

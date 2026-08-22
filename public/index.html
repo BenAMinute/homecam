@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HomeCam Dashboard - Security System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="/socket.io/socket.io.js"></script>
+</head>
+<body>
+
+  <!-- Top Header Navigation -->
+  <header>
+    <div class="brand">
+      <div class="brand-icon">📹</div>
+      <div>
+        <h1>HomeCam</h1>
+      </div>
+    </div>
+
+    <!-- Navigation Tabs -->
+    <div class="nav-tabs">
+      <button class="tab-btn active" data-tab="live">🎥 Live Feeds</button>
+      <button class="tab-btn" data-tab="events">📋 Detection Events</button>
+      <button class="tab-btn" data-tab="protected">🔒 Protected Clips</button>
+      <button class="tab-btn" data-tab="settings">⚙️ Settings</button>
+    </div>
+
+    <!-- Header System Metrics -->
+    <div class="header-meta">
+      <div class="meta-chip" id="camCountChip">📱 0 Cameras Online</div>
+      <div class="meta-chip" id="storageChip">💾 0.0 MB / 50 GB</div>
+    </div>
+  </header>
+
+  <main>
+    <!-- TAB 1: Live Cameras Grid -->
+    <div class="tab-content active" id="tab-live">
+      <div class="section-header">
+        <h2 class="section-title">Live Camera Streams</h2>
+        <button class="btn-primary" id="btnRefreshStreams">🔄 Refresh Feeds</button>
+      </div>
+      <div class="camera-grid" id="cameraGrid">
+        <!-- Dynamically injected camera cards -->
+      </div>
+    </div>
+
+    <!-- TAB 2: All Detection Events -->
+    <div class="tab-content" id="tab-events">
+      <div class="section-header">
+        <h2 class="section-title">Recorded Detection Events</h2>
+      </div>
+
+      <!-- Filters -->
+      <div class="filters-bar">
+        <button class="filter-btn active" data-filter="all">All Events</button>
+        <button class="filter-btn" data-filter="cat">🐱 Cats</button>
+        <button class="filter-btn" data-filter="person">👤 Humans</button>
+        <button class="filter-btn" data-filter="dog">🐶 Dogs</button>
+        <button class="filter-btn" data-filter="vehicle">🚗 Vehicles</button>
+        <button class="filter-btn" data-filter="motion">🏃 Motion</button>
+      </div>
+
+      <div class="events-grid" id="eventsGrid">
+        <!-- Dynamically injected event cards -->
+      </div>
+    </div>
+
+    <!-- TAB 3: Protected / Saved Clips -->
+    <div class="tab-content" id="tab-protected">
+      <div class="section-header">
+        <h2 class="section-title">🔒 Protected Clips (Immune to Auto-Cleanup)</h2>
+      </div>
+      <div class="events-grid" id="protectedGrid">
+        <!-- Dynamically injected protected event cards -->
+      </div>
+    </div>
+
+    <!-- TAB 4: System & AI Settings -->
+    <div class="tab-content" id="tab-settings">
+      <div class="section-header">
+        <h2 class="section-title">System & Detection Configuration</h2>
+      </div>
+
+      <div class="settings-grid">
+        <!-- Detection Targets Card -->
+        <div class="settings-card">
+          <h3>🎯 AI Target Detection Toggles</h3>
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;">Select which objects trigger automatic recording and alerts:</p>
+          
+          <div class="setting-item">
+            <span>🐱 Cat Detection</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="targetCat" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <span>👤 Human / Person Detection</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="targetPerson" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <span>🐶 Dog Detection</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="targetDog" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <span>🚗 Vehicle / Car Detection</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="targetVehicle">
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="setting-item">
+            <span>🏃 General Canvas Motion</span>
+            <label class="toggle-switch">
+              <input type="checkbox" id="targetMotion" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <button class="btn-primary" id="btnSaveTargetSettings" style="margin-top: 10px;">
+            💾 Save Target Settings
+          </button>
+        </div>
+
+        <!-- Storage & Retention Card -->
+        <div class="settings-card">
+          <h3>💾 Storage & Auto-Cleanup Rules</h3>
+          <div class="setting-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <label style="font-size: 0.9rem; font-weight: 600;">Auto-Delete Unprotected Clips After (Days)</label>
+            <input type="number" id="inputRetentionDays" class="filter-btn" value="14" min="1" max="365" style="width: 100%; color: #fff; padding: 10px;">
+          </div>
+
+          <div class="setting-item" style="flex-direction: column; align-items: flex-start; gap: 8px;">
+            <label style="font-size: 0.9rem; font-weight: 600;">Maximum Storage Cap (GB)</label>
+            <input type="number" id="inputMaxStorageGB" class="filter-btn" value="50" min="1" max="5000" style="width: 100%; color: #fff; padding: 10px;">
+          </div>
+
+          <button class="btn-primary" id="btnSaveStorageSettings">
+            💾 Save Retention Limits
+          </button>
+
+          <button class="btn-danger" id="btnTriggerCleanup" style="margin-top: 12px; width: 100%;">
+            🧹 Trigger Manual Auto-Cleanup Now
+          </button>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Video Playback Modal -->
+  <div class="modal-overlay" id="playerModal">
+    <div class="player-card">
+      <video id="modalVideoPlayer" controls autoplay></video>
+      <div class="player-controls">
+        <div>
+          <h4 id="modalEventTitle" style="font-size: 1.1rem; color: #fff;">Event Recording</h4>
+          <span id="modalEventTime" style="font-size: 0.85rem; color: var(--text-muted);">2026-08-22 12:00</span>
+        </div>
+        <div style="display: flex; gap: 10px; align-items: center;">
+          <button class="lock-btn" id="modalLockBtn" title="Lock / Protect Video from deletion" style="font-size: 1.5rem;">
+            🔒
+          </button>
+          <a id="modalDownloadBtn" class="btn-primary" download style="text-decoration: none; font-size: 0.85rem;">
+            ⬇️ Download
+          </a>
+          <button class="btn-danger" id="modalDeleteBtn">
+            🗑️ Delete
+          </button>
+          <button class="filter-btn" id="modalCloseBtn">
+            ❌ Close
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/js/viewer.js"></script>
+</body>
+</html>
