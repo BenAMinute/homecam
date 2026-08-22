@@ -224,7 +224,14 @@ function renderCameraGrid() {
   // Setup WebRTC stream connections for online cameras
   cameras.forEach(cam => {
     if (cam.status === 'online') {
-      subscribeToWebRTCStream(cam.id);
+      const conn = peerConnections[cam.id];
+      const videoEl = document.getElementById(`video-feed-${cam.id}`);
+      if (conn && conn.stream && videoEl) {
+        videoEl.srcObject = conn.stream;
+        videoEl.play().catch(e => console.warn('Autoplay error:', e));
+      } else {
+        subscribeToWebRTCStream(cam.id);
+      }
     }
   });
 }
@@ -241,10 +248,13 @@ function subscribeToWebRTCStream(cameraId) {
     ]
   });
 
-  peerConnections[cameraId] = { pc, pendingCandidates: [] };
+  peerConnections[cameraId] = { pc, pendingCandidates: [], stream: null };
 
   pc.ontrack = (event) => {
     console.log(`📺 WebRTC Track received for camera ${cameraId}`);
+    if (peerConnections[cameraId]) {
+      peerConnections[cameraId].stream = event.streams[0];
+    }
     const videoEl = document.getElementById(`video-feed-${cameraId}`);
     if (videoEl && event.streams[0]) {
       videoEl.srcObject = event.streams[0];

@@ -17,7 +17,7 @@ let cameraName = localStorage.getItem('homecam_name') || 'Phone Camera 1';
 let facingMode = localStorage.getItem('homecam_facing') || 'environment';
 let resolution = localStorage.getItem('homecam_res') || '720p';
 
-let enabledTargets = []; // Populated via socket update_targets from server
+let enabledTargets = ['cat']; // Populated via socket update_targets from server
 let confidenceThreshold = 0.60;
 
 // MediaRecorder Ring Buffer state
@@ -245,7 +245,6 @@ async function toggleTorch(forceState) {
   const targetState = forceState !== undefined ? forceState : !isTorchOn;
 
   try {
-    // Strategy 1: Direct constraint application (Android Chrome default)
     await track.applyConstraints({
       advanced: [{ torch: targetState }]
     });
@@ -257,7 +256,6 @@ async function toggleTorch(forceState) {
     return isTorchOn;
   } catch (err) {
     console.warn('Direct torch constraint attempt failed, trying capability check fallback:', err);
-    // Strategy 2: Capability check fallback
     try {
       const capabilities = track.getCapabilities ? track.getCapabilities() : {};
       if ('torch' in capabilities || capabilities.torch) {
@@ -348,10 +346,17 @@ function initSocketConnection() {
     statusDot.classList.remove('online');
   });
 
-  // Remote Target Config Update
+  // Remote Target Config Update (Safe string vs Array parsing)
   socket.on('update_targets', (data) => {
     if (data.targets) {
-      enabledTargets = data.targets;
+      if (typeof data.targets === 'string') {
+        try { enabledTargets = JSON.parse(data.targets); } catch (e) { enabledTargets = ['cat']; }
+      } else if (Array.isArray(data.targets)) {
+        enabledTargets = data.targets;
+      } else {
+        enabledTargets = ['cat'];
+      }
+      console.log('🎯 Camera targets updated from server:', enabledTargets);
       renderActiveTargetBadges();
     }
   });
@@ -470,9 +475,17 @@ function renderActiveTargetBadges() {
     motion: '🏃 Motion'
   };
 
-  activeTargetsList.innerHTML = enabledTargets.map(t =>
-    `<span class="target-tag">${iconMap[t] || t}</span>`
-  ).join('');
+  if (!Array.isArray(enabledTargets)) {
+    enabledTargets = [];
+  }
+
+  if (enabledTargets.length === 0) {
+    activeTargetsList.innerHTML = `<span class="target-tag">🐱 Cat</span>`;
+  } else {
+    activeTargetsList.innerHTML = enabledTargets.map(t =>
+      `<span class="target-tag">${iconMap[t] || t}</span>`
+    ).join('');
+  }
 }
 renderActiveTargetBadges();
 
@@ -494,12 +507,12 @@ async function loadAIModel() {
 // Helper to determine the best cross-browser MIME type
 function getBestSupportedMimeType() {
   const candidates = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4',
-    'video/webm;codecs=h264,opus',
-    'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',
-    'video/webm'
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=h264,opus',
+    'video/webm',
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4'
   ];
   for (const type of candidates) {
     if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
@@ -614,7 +627,8 @@ async function triggerEventRecording(eventType, confidence) {
     renderActiveTargetBadges();
 
     const usedMime = (mediaRecorder && mediaRecorder.mimeType) ? mediaRecorder.mimeType : (activeMimeType || 'video/webm');
-    const ext = usedMime.toLowerCase().includes('mp4') ? '.mp4' : '.webm';
+    const isMp4 = usedMime.toLowerCase().includes('mp4') && !usedMime.toLowerCase().includes('webm');
+    const ext = isMp4 ? '.mp4' : '.webm';
     const videoBlob = new Blob(recordedChunks, { type: usedMime });
 
     recordedChunks = [];
