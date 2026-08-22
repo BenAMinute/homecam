@@ -319,7 +319,7 @@ function createEventCardHTML(evt) {
   return `
     <div class="event-card" onclick="openPlayerModal('${evt.id}')">
       <div class="event-thumb">
-        <video src="${videoUrl}#t=0.5" preload="metadata" muted></video>
+        <video src="${videoUrl}#t=0.5" preload="metadata" muted playsinline></video>
         <div class="play-overlay">▶</div>
       </div>
       <div class="event-info">
@@ -345,12 +345,14 @@ window.openPlayerModal = function(eventId) {
   const videoUrl = evt.video_url || `/media/clips/${evt.video_path.split('/').pop()}`;
 
   modalVideoPlayer.src = videoUrl;
+  modalVideoPlayer.load();
   modalEventTitle.textContent = `${evt.type.toUpperCase()} Event - ${evt.camera_name}`;
   modalEventTime.textContent = new Date(evt.timestamp).toLocaleString();
   modalDownloadBtn.href = videoUrl;
 
   updateModalLockUI();
   playerModal.classList.add('active');
+  modalVideoPlayer.play().catch(e => console.log('Autoplay deferred:', e));
 };
 
 function updateModalLockUI() {

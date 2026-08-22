@@ -24,6 +24,7 @@ let recordedChunks = [];
 let preRollBuffer = []; // stores last 5 seconds of chunks
 let isRecordingEvent = false;
 let lastEventUploadTime = 0;
+let activeMimeType = '';
 
 // Canvas Frame Differencing for Motion Detection
 let lastFrameData = null;
@@ -407,16 +408,33 @@ async function loadAIModel() {
   }
 }
 
+// Helper to determine the best cross-browser MIME type
+function getBestSupportedMimeType() {
+  const candidates = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4',
+    'video/webm;codecs=h264,opus',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm'
+  ];
+  for (const type of candidates) {
+    if (typeof MediaRecorder !== 'undefined' && MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(type)) {
+      return type;
+    }
+  }
+  return '';
+}
+
 // 8. Motion Detection & Pre-Roll Video Recorder
 function initPreRollRecorder() {
   if (!mediaStream) return;
 
-  const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')
-    ? 'video/webm;codecs=vp8,opus'
-    : 'video/webm';
+  activeMimeType = getBestSupportedMimeType();
+  const options = activeMimeType ? { mimeType: activeMimeType } : {};
 
   try {
-    mediaRecorder = new MediaRecorder(mediaStream, { mimeType });
+    mediaRecorder = new MediaRecorder(mediaStream, options);
     recordedChunks = [];
     preRollBuffer = [];
 
@@ -434,7 +452,7 @@ function initPreRollRecorder() {
     };
 
     mediaRecorder.start(1000);
-    console.log('🎞️ Continuous pre-roll video recorder started');
+    console.log(`🎞️ Continuous pre-roll recorder started with MIME: "${mediaRecorder.mimeType || activeMimeType}"`);
   } catch (err) {
     console.error('MediaRecorder error:', err);
   }
@@ -443,7 +461,6 @@ function initPreRollRecorder() {
 // Motion Loop (Canvas Pixel Differencing)
 function startMotionDetectionLoop() {
   setInterval(async () => {
-    // If recording is disabled globally/locally, skip motion calculations completely!
     if (!videoEl.videoWidth || isRecordingEvent || !isRecordingEnabled) return;
 
     motionCtx.drawImage(videoEl, 0, 0, 64, 64);
@@ -513,12 +530,15 @@ async function triggerEventRecording(eventType, confidence) {
     isRecordingEvent = false;
     renderActiveTargetBadges();
 
-    const videoBlob = new Blob(recordedChunks, { type: 'video/webm' });
+    const usedMime = (mediaRecorder && mediaRecorder.mimeType) ? mediaRecorder.mimeType : (activeMimeType || 'video/webm');
+    const ext = usedMime.toLowerCase().includes('mp4') ? '.mp4' : '.webm';
+    const videoBlob = new Blob(recordedChunks, { type: usedMime });
+
     recordedChunks = [];
     preRollBuffer = [];
 
     const formData = new FormData();
-    formData.append('video', videoBlob, `event_${eventType}_${now}.webm`);
+    formData.append('video', videoBlob, `event_${eventType}_${now}${ext}`);
     formData.append('camera_id', cameraId);
     formData.append('camera_name', cameraName);
     formData.append('type', eventType);
@@ -526,7 +546,7 @@ async function triggerEventRecording(eventType, confidence) {
     formData.append('duration', '12');
 
     try {
-      console.log('📤 Uploading recorded clip to Home Server...');
+      console.log(`📤 Uploading recorded clip (${ext}, ${usedMime}) to Home Server...`);
       const response = await fetch('/api/events/upload', {
         method: 'POST',
         body: formData
