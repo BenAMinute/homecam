@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initSocketConnection();
   fetchCameras();
   fetchEvents();
+  fetchDailySummary();
   fetchStorageStats();
   initSettings();
 });
@@ -57,6 +58,7 @@ function initTabs() {
         const allBtn = document.querySelector('.filters-bar .filter-btn[data-filter="all"]');
         if (allBtn) allBtn.classList.add('active');
         renderEvents();
+        fetchDailySummary();
       } else if (targetTab === 'protected') {
         renderProtectedEvents();
       }
@@ -89,11 +91,16 @@ function initSocketConnection() {
     fetchCameras();
   });
 
+  socket.on('camera_deleted', (data) => {
+    fetchCameras();
+  });
+
   socket.on('new_event', (eventObj) => {
     console.log('🔔 New detection event received:', eventObj);
     events.unshift(eventObj);
     renderEvents();
     renderProtectedEvents();
+    fetchDailySummary();
     fetchStorageStats();
   });
 
@@ -103,6 +110,7 @@ function initSocketConnection() {
       events[idx] = updatedEvt;
       renderEvents();
       renderProtectedEvents();
+      fetchDailySummary();
     }
   });
 
@@ -110,6 +118,7 @@ function initSocketConnection() {
     events = events.filter(e => e.id !== data.id);
     renderEvents();
     renderProtectedEvents();
+    fetchDailySummary();
     fetchStorageStats();
   });
 
@@ -140,7 +149,6 @@ function initSocketConnection() {
 
   socket.on('webrtc_ice_candidate', async (data) => {
     const { from_id, candidate } = data;
-    // Extract camera_id from socket room tag or id
     const camera = cameras.find(c => `camera_${c.id}` === from_id || c.id === from_id);
     const cameraId = camera ? camera.id : Object.keys(peerConnections)[0];
 
@@ -201,12 +209,13 @@ function renderCameraGrid() {
         </div>
         <div class="camera-footer">
           <span style="font-size: 0.85rem; color: var(--text-muted);">${cam.status === 'online' ? batText : 'Offline'}</span>
-          ${cam.status === 'online' ? `
-            <div style="display: flex; gap: 6px;">
-              <button class="filter-btn" style="padding: 6px 12px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'toggle_torch')">💡 Torch</button>
-              <button class="filter-btn" style="padding: 6px 12px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'switch_lens')">🔄 Flip</button>
-            </div>
-          ` : ''}
+          <div style="display: flex; gap: 6px; align-items: center;">
+            ${cam.status === 'online' ? `
+              <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'toggle_torch')">💡 Torch</button>
+              <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'switch_lens')">🔄 Flip</button>
+            ` : ''}
+            <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem; border-color: rgba(244, 63, 94, 0.4); color: #fda4af;" onclick="removeCamera('${cam.id}', '${cam.name}')">🗑️ Remove</button>
+          </div>
         </div>
       </div>
     `;
@@ -252,7 +261,6 @@ function subscribeToWebRTCStream(cameraId) {
     }
   };
 
-  // Signal camera node to start WebRTC offer
   socket.emit('request_stream', { camera_id: cameraId });
 }
 
@@ -263,7 +271,64 @@ window.sendControl = function(cameraId, command) {
   }
 };
 
-// 5. Events Timeline & Gallery
+window.removeCamera = async function(cameraId, cameraName) {
+  if (confirm(`Are you sure you want to remove camera "${cameraName}" from your home server?`)) {
+    try {
+      const res = await fetch(`/api/cameras/${cameraId}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (data.success) {
+        if (peerConnections[cameraId] && peerConnections[cameraId].pc) {
+          peerConnections[cameraId].pc.close();
+          delete peerConnections[cameraId];
+        }
+        fetchCameras();
+      }
+    } catch (err) {
+      console.error('Error removing camera:', err);
+    }
+  }
+};
+
+// 5. Daily Summary & Analytics
+async function fetchDailySummary() {
+  try {
+    const res = await fetch('/api/events/summary');
+    const data = await res.json();
+    if (data.success && data.summary) {
+      renderDailySummary(data.summary);
+    }
+  } catch (err) {
+    console.error('Error fetching summary:', err);
+  }
+}
+
+function renderDailySummary(summary) {
+  const kpiTotal = document.getElementById('kpiTotalToday');
+  const kpiCats = document.getElementById('kpiCatsToday');
+  const kpiHumans = document.getElementById('kpiHumansToday');
+  const kpiMotion = document.getElementById('kpiMotionToday');
+  const peakChip = document.getElementById('peakHourChip');
+  const hourlyBarsContainer = document.getElementById('hourlyBars');
+
+  if (kpiTotal) kpiTotal.textContent = summary.total_today || 0;
+  if (kpiCats) kpiCats.textContent = summary.by_type ? (summary.by_type.cat || 0) : 0;
+  if (kpiHumans) kpiHumans.textContent = summary.by_type ? (summary.by_type.person || 0) : 0;
+  if (kpiMotion) kpiMotion.textContent = summary.by_type ? (summary.by_type.motion || 0) : 0;
+  if (peakChip) peakChip.textContent = `🕒 Peak Hour: ${summary.peak_hour || 'N/A'}`;
+
+  if (hourlyBarsContainer && summary.hourly_distribution) {
+    const maxVal = Math.max(...summary.hourly_distribution, 1);
+    hourlyBarsContainer.innerHTML = summary.hourly_distribution.map((count, hour) => {
+      const heightPct = Math.max((count / maxVal) * 100, 8);
+      const isPeak = count === maxVal && count > 0;
+      const ampm = hour >= 12 ? 'PM' : 'AM';
+      const formattedHour = (hour % 12 || 12) + ampm;
+      return `<div class="bar-col ${isPeak ? 'active-peak' : ''}" style="height: ${heightPct}%;" title="${formattedHour}: ${count} event(s)"></div>`;
+    }).join('');
+  }
+}
+
+// 6. Events Timeline & Gallery
 async function fetchEvents() {
   try {
     const res = await fetch('/api/events');
@@ -336,7 +401,7 @@ function createEventCardHTML(evt) {
   `;
 }
 
-// 6. Video Player Modal
+// 7. Video Player Modal
 window.openPlayerModal = function(eventId) {
   const evt = events.find(e => e.id === eventId);
   if (!evt) return;
@@ -382,6 +447,7 @@ window.toggleLock = async function(eventId) {
         }
         renderEvents();
         renderProtectedEvents();
+        fetchDailySummary();
       }
     }
   } catch (err) {
@@ -407,6 +473,7 @@ modalDeleteBtn.addEventListener('click', async () => {
         modalVideoPlayer.pause();
         renderEvents();
         renderProtectedEvents();
+        fetchDailySummary();
         fetchStorageStats();
       }
     } catch (err) {
@@ -415,7 +482,7 @@ modalDeleteBtn.addEventListener('click', async () => {
   }
 });
 
-// 7. System Storage & Settings
+// 8. System Storage & Settings
 async function fetchStorageStats() {
   try {
     const res = await fetch('/api/storage/stats');
@@ -495,6 +562,7 @@ async function initSettings() {
     if (data.success) {
       alert('🧹 Manual auto-cleanup completed successfully!');
       fetchEvents();
+      fetchDailySummary();
       fetchStorageStats();
     }
   });

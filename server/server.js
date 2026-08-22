@@ -55,6 +55,18 @@ app.get('/api/cameras', async (req, res) => {
   }
 });
 
+app.delete('/api/cameras/:id', async (req, res) => {
+  try {
+    const camId = req.params.id;
+    await db.deleteCamera(camId);
+    io.emit('camera_deleted', { id: camId });
+    console.log(`🗑️ Removed camera node "${camId}" from server database`);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.put('/api/cameras/:id/targets', async (req, res) => {
   try {
     const { targets } = req.body;
@@ -80,6 +92,15 @@ app.get('/api/events', async (req, res) => {
       offset: parseInt(offset || '0', 10)
     });
     res.json({ success: true, events });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+app.get('/api/events/summary', async (req, res) => {
+  try {
+    const summary = await db.getDailySummary();
+    res.json({ success: true, summary });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }

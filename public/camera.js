@@ -10,6 +10,8 @@ let currentBatteryLevel = 100;
 let isCharging = true;
 let isRecordingEnabled = true; // Master toggle for motion event recording
 
+let availableDevices = []; // Physical camera lenses detected on device
+let selectedDeviceId = localStorage.getItem('homecam_device_id') || '';
 let cameraId = localStorage.getItem('homecam_id') || `cam_${Math.random().toString(36).substr(2, 6)}`;
 let cameraName = localStorage.getItem('homecam_name') || 'Phone Camera 1';
 let facingMode = localStorage.getItem('homecam_facing') || 'environment';
@@ -36,6 +38,7 @@ const videoEl = document.getElementById('cameraVideo');
 const setupModal = document.getElementById('setupModal');
 const inputCamId = document.getElementById('inputCamId');
 const selectFacing = document.getElementById('selectFacing');
+const selectDevice = document.getElementById('selectDevice');
 const selectRes = document.getElementById('selectRes');
 const btnSaveSetup = document.getElementById('btnSaveSetup');
 const btnStealth = document.getElementById('btnStealth');
@@ -84,22 +87,28 @@ inputCamId.value = cameraName;
 selectFacing.value = facingMode;
 selectRes.value = resolution;
 
+// Populate physical camera lens devices
+populateLensList();
+
 if (localStorage.getItem('homecam_configured')) {
   setupModal.style.display = 'none';
   startCameraNode();
 }
 
-btnSettings.addEventListener('click', () => {
+btnSettings.addEventListener('click', async () => {
+  await populateLensList();
   setupModal.style.display = 'flex';
 });
 
 btnSaveSetup.addEventListener('click', () => {
   cameraName = inputCamId.value.trim() || 'Camera Node';
   facingMode = selectFacing.value;
+  selectedDeviceId = selectDevice ? selectDevice.value : '';
   resolution = selectRes.value;
 
   localStorage.setItem('homecam_name', cameraName);
   localStorage.setItem('homecam_facing', facingMode);
+  localStorage.setItem('homecam_device_id', selectedDeviceId);
   localStorage.setItem('homecam_res', resolution);
   localStorage.setItem('homecam_configured', 'true');
 
@@ -108,9 +117,18 @@ btnSaveSetup.addEventListener('click', () => {
 });
 
 btnFlipCam.addEventListener('click', async () => {
-  facingMode = facingMode === 'environment' ? 'user' : 'environment';
-  localStorage.setItem('homecam_facing', facingMode);
-  selectFacing.value = facingMode;
+  if (availableDevices.length > 1) {
+    // Cycle to next physical lens (Ultra-Wide -> Main -> Zoom -> Selfie)
+    const currentIdx = availableDevices.findIndex(d => d.deviceId === selectedDeviceId);
+    const nextIdx = (currentIdx + 1) % availableDevices.length;
+    selectedDeviceId = availableDevices[nextIdx].deviceId;
+    localStorage.setItem('homecam_device_id', selectedDeviceId);
+    if (selectDevice) selectDevice.value = selectedDeviceId;
+    console.log(`🔄 Switched to camera lens [${nextIdx + 1}/${availableDevices.length}]:`, availableDevices[nextIdx].label);
+  } else {
+    facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    localStorage.setItem('homecam_facing', facingMode);
+  }
   await initCameraStream();
 });
 
@@ -136,11 +154,38 @@ function updateRecordingUI() {
   renderActiveTargetBadges();
 }
 
+// Enumerate all physical camera lenses on smartphone
+async function populateLensList() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    availableDevices = devices.filter(d => d.kind === 'videoinput');
+
+    if (selectDevice && availableDevices.length > 0) {
+      selectDevice.innerHTML = availableDevices.map((d, idx) => {
+        let label = d.label || `Camera Lens ${idx + 1}`;
+        const lblLower = label.toLowerCase();
+        if (lblLower.includes('back') || lblLower.includes('0') || lblLower.includes('environment')) {
+          label = `📷 ${label} (Rear)`;
+        } else if (lblLower.includes('front') || lblLower.includes('1') || lblLower.includes('user')) {
+          label = `🤳 ${label} (Front)`;
+        }
+        const selected = d.deviceId === selectedDeviceId ? 'selected' : '';
+        return `<option value="${d.deviceId}" ${selected}>${label}</option>`;
+      }).join('');
+    }
+  } catch (err) {
+    console.warn('Error enumerating camera lenses:', err);
+  }
+}
+
 // 4. Initialize Camera Stream & TensorFlow AI
 async function startCameraNode() {
   camNameLabel.textContent = cameraName;
   await requestWakeLock();
   await initCameraStream();
+  await populateLensList(); // Refresh labels now that permission is granted
   initSocketConnection();
   loadAIModel();
   startBatteryMonitoring();
@@ -151,26 +196,36 @@ async function initCameraStream() {
     mediaStream.getTracks().forEach(track => track.stop());
   }
 
-  const resMap = {
-    '1080p': { width: 1920, height: 1080 },
-    '720p': { width: 1280, height: 720 },
-    '480p': { width: 640, height: 480 }
-  };
-  const targetRes = resMap[resolution] || resMap['720p'];
+  const videoConstraints = {};
+  if (selectedDeviceId) {
+    videoConstraints.deviceId = { exact: selectedDeviceId };
+  } else {
+    videoConstraints.facingMode = { ideal: facingMode };
+  }
+
+  if (resolution === '1080p') {
+    videoConstraints.width = { ideal: 1920 };
+    videoConstraints.height = { ideal: 1080 };
+  } else if (resolution === '480p') {
+    videoConstraints.width = { ideal: 640 };
+    videoConstraints.height = { ideal: 480 };
+  }
 
   try {
     mediaStream = await navigator.mediaDevices.getUserMedia({
-      video: {
-        facingMode: { ideal: facingMode },
-        width: { ideal: targetRes.width },
-        height: { ideal: targetRes.height }
-      },
+      video: videoConstraints,
       audio: true
+    }).catch(async (e) => {
+      console.warn('Retrying video-only getUserMedia:', e);
+      return await navigator.mediaDevices.getUserMedia({
+        video: videoConstraints,
+        audio: false
+      });
     });
 
     videoEl.srcObject = mediaStream;
     await videoEl.play();
-    console.log(`🎥 Camera stream active (${resolution}, ${facingMode})`);
+    console.log(`🎥 Camera stream active (Device: ${selectedDeviceId || facingMode}, ${resolution})`);
 
     isTorchOn = false;
     initPreRollRecorder();
@@ -187,25 +242,45 @@ async function toggleTorch(forceState) {
   const track = mediaStream.getVideoTracks()[0];
   if (!track) return false;
 
+  const targetState = forceState !== undefined ? forceState : !isTorchOn;
+
   try {
-    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-    if ('torch' in capabilities || capabilities.torch) {
-      isTorchOn = forceState !== undefined ? forceState : !isTorchOn;
-      await track.applyConstraints({
-        advanced: [{ torch: isTorchOn }]
-      });
-      console.log('💡 Flashlight / Torch toggled:', isTorchOn);
-      if (btnTorchLocal) {
-        btnTorchLocal.style.background = isTorchOn ? 'var(--accent-amber, #f59e0b)' : '';
-      }
-      return isTorchOn;
-    } else {
-      console.warn('Torch control is not supported by this camera lens or browser.');
-      alert('Torch/Flashlight is not supported on this camera lens (usually only rear camera supports flash).');
-      return false;
+    // Strategy 1: Direct constraint application (Android Chrome default)
+    await track.applyConstraints({
+      advanced: [{ torch: targetState }]
+    });
+    isTorchOn = targetState;
+    console.log('💡 Flashlight / Torch toggled successfully:', isTorchOn);
+    if (btnTorchLocal) {
+      btnTorchLocal.style.background = isTorchOn ? 'var(--accent-amber, #f59e0b)' : '';
     }
+    return isTorchOn;
   } catch (err) {
-    console.error('Error toggling torch:', err);
+    console.warn('Direct torch constraint attempt failed, trying capability check fallback:', err);
+    // Strategy 2: Capability check fallback
+    try {
+      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+      if ('torch' in capabilities || capabilities.torch) {
+        await track.applyConstraints({
+          advanced: [{ torch: targetState }]
+        });
+        isTorchOn = targetState;
+        if (btnTorchLocal) {
+          btnTorchLocal.style.background = isTorchOn ? 'var(--accent-amber, #f59e0b)' : '';
+        }
+        return isTorchOn;
+      }
+    } catch (err2) {
+      console.warn('Torch capability fallback also failed:', err2);
+    }
+
+    console.warn('Flashlight is not available on this specific camera lens.');
+    if (btnTorchLocal) {
+      btnTorchLocal.style.background = 'rgba(239, 68, 68, 0.3)';
+      setTimeout(() => {
+        btnTorchLocal.style.background = '';
+      }, 1500);
+    }
     return false;
   }
 }
@@ -293,8 +368,16 @@ function initSocketConnection() {
     console.log('Received remote command:', data);
     if (data.command === 'toggle_torch') {
       await toggleTorch();
-    } else if (data.command === 'switch_lens') {
-      facingMode = facingMode === 'environment' ? 'user' : 'environment';
+    } else if (data.command === 'switch_lens' || data.command === 'cycle_lens') {
+      if (availableDevices.length > 1) {
+        const currentIdx = availableDevices.findIndex(d => d.deviceId === selectedDeviceId);
+        const nextIdx = (currentIdx + 1) % availableDevices.length;
+        selectedDeviceId = availableDevices[nextIdx].deviceId;
+        localStorage.setItem('homecam_device_id', selectedDeviceId);
+      } else {
+        facingMode = facingMode === 'environment' ? 'user' : 'environment';
+        localStorage.setItem('homecam_facing', facingMode);
+      }
       await initCameraStream();
     } else if (data.command === 'toggle_recording') {
       isRecordingEnabled = !isRecordingEnabled;

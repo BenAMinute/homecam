@@ -307,10 +307,16 @@
         <input type="text" id="inputCamId" class="form-control" value="Living Room Phone" placeholder="e.g. Living Room">
       </div>
       <div class="form-group">
-        <label for="selectFacing">Camera Lens</label>
+        <label for="selectFacing">Camera Lens Mode</label>
         <select id="selectFacing" class="form-control">
           <option value="environment" selected>Rear Camera (Environment - Supports Flashlight)</option>
           <option value="user">Front Camera (Selfie)</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label for="selectDevice">Specific Physical Lens (Ultra-Wide / Main / Telephoto Zoom)</label>
+        <select id="selectDevice" class="form-control">
+          <option value="">Auto-detecting Lenses...</option>
         </select>
       </div>
       <div class="form-group">

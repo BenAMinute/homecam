@@ -54,6 +54,40 @@
         <h2 class="section-title">Recorded Detection Events</h2>
       </div>
 
+      <!-- Daily Summary Card -->
+      <div class="summary-card" id="summaryCard">
+        <div class="summary-header">
+          <h3>📊 Daily Detection Summary (Past 24 Hours)</h3>
+          <span class="meta-chip" id="peakHourChip">🕒 Peak Hour: N/A</span>
+        </div>
+        
+        <div class="summary-kpi-grid">
+          <div class="kpi-box">
+            <span class="kpi-value" id="kpiTotalToday">0</span>
+            <span class="kpi-label">Events Today</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-value" id="kpiCatsToday">0</span>
+            <span class="kpi-label">🐱 Cats</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-value" id="kpiHumansToday">0</span>
+            <span class="kpi-label">👤 Humans</span>
+          </div>
+          <div class="kpi-box">
+            <span class="kpi-value" id="kpiMotionToday">0</span>
+            <span class="kpi-label">🏃 Motion</span>
+          </div>
+        </div>
+
+        <div class="hourly-chart-container">
+          <div class="chart-title">24-Hour Detection Frequency Timeline</div>
+          <div class="hourly-bars" id="hourlyBars">
+            <!-- 24 hourly bars rendered dynamically -->
+          </div>
+        </div>
+      </div>
+
       <!-- Filters -->
       <div class="filters-bar">
         <button class="filter-btn active" data-filter="all">All Events</button>

@@ -135,6 +135,11 @@ module.exports = {
     return await stmt.run(JSON.stringify(enabledTargets), id);
   },
 
+  async deleteCamera(id) {
+    const stmt = dbInstance.prepare('DELETE FROM cameras WHERE id = ?');
+    return await stmt.run(id);
+  },
+
   async getAllCameras() {
     const stmt = dbInstance.prepare('SELECT * FROM cameras ORDER BY name ASC');
     const rows = await stmt.all();
@@ -226,6 +231,50 @@ module.exports = {
   async getUnprotectedEventsForDiskCleanup() {
     const stmt = dbInstance.prepare('SELECT * FROM events WHERE is_protected = 0 ORDER BY timestamp ASC');
     return await stmt.all();
+  },
+
+  async getDailySummary() {
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    const stmt = dbInstance.prepare('SELECT * FROM events WHERE timestamp >= ? ORDER BY timestamp DESC');
+    const events = (await stmt.all(oneDayAgo)) || [];
+
+    const summary = {
+      total_today: events.length,
+      by_type: { cat: 0, person: 0, dog: 0, vehicle: 0, motion: 0 },
+      by_camera: {},
+      hourly_distribution: new Array(24).fill(0),
+      peak_hour: 'N/A'
+    };
+
+    let maxHourlyCount = 0;
+    let peakHourIndex = -1;
+
+    for (const evt of events) {
+      if (summary.by_type[evt.type] !== undefined) {
+        summary.by_type[evt.type]++;
+      } else {
+        summary.by_type[evt.type] = 1;
+      }
+
+      const camName = evt.camera_name || 'Camera ' + evt.camera_id;
+      summary.by_camera[camName] = (summary.by_camera[camName] || 0) + 1;
+
+      const hour = new Date(evt.timestamp).getHours();
+      summary.hourly_distribution[hour]++;
+
+      if (summary.hourly_distribution[hour] > maxHourlyCount) {
+        maxHourlyCount = summary.hourly_distribution[hour];
+        peakHourIndex = hour;
+      }
+    }
+
+    if (peakHourIndex >= 0) {
+      const ampm = peakHourIndex >= 12 ? 'PM' : 'AM';
+      const formattedHour = (peakHourIndex % 12 || 12).toString().padStart(2, '0');
+      summary.peak_hour = `${formattedHour}:00 ${ampm}`;
+    }
+
+    return summary;
   },
 
   async getAllSettings() {
