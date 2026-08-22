@@ -127,8 +127,9 @@
 
     .controls-row {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       justify-content: center;
+      flex-wrap: wrap;
     }
 
     .btn {
@@ -136,15 +137,15 @@
       backdrop-filter: blur(12px);
       color: #fff;
       border: 1px solid rgba(255, 255, 255, 0.15);
-      padding: 12px 18px;
-      border-radius: 16px;
+      padding: 10px 14px;
+      border-radius: 14px;
       font-family: inherit;
       font-weight: 600;
-      font-size: 0.9rem;
+      font-size: 0.85rem;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 6px;
       transition: all 0.2s ease;
     }
     .btn:active {
@@ -273,10 +274,16 @@
     <div class="bottom-bar">
       <div class="controls-row">
         <button class="btn btn-stealth" id="btnStealth">
-          🌙 Dim Screen (Stealth)
+          🌙 Dim Screen
+        </button>
+        <button class="btn" id="btnPauseRecord">
+          🔴 Recording ON
+        </button>
+        <button class="btn" id="btnTorchLocal">
+          💡 Torch
         </button>
         <button class="btn" id="btnFlipCam">
-          🔄 Switch Camera
+          🔄 Switch
         </button>
         <button class="btn" id="btnSettings">
           ⚙️ Setup
@@ -302,7 +309,7 @@
       <div class="form-group">
         <label for="selectFacing">Camera Lens</label>
         <select id="selectFacing" class="form-control">
-          <option value="environment" selected>Rear Camera (Environment)</option>
+          <option value="environment" selected>Rear Camera (Environment - Supports Flashlight)</option>
           <option value="user">Front Camera (Selfie)</option>
         </select>
       </div>

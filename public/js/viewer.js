@@ -6,7 +6,7 @@ let events = [];
 let protectedEvents = [];
 let activeFilter = 'all';
 let currentPlayingEvent = null;
-let peerConnections = {}; // camera_id -> RTCPeerConnection
+let peerConnections = {}; // camera_id -> { pc, pendingCandidates }
 
 // DOM Elements
 const tabBtns = document.querySelectorAll('.tab-btn');
@@ -14,7 +14,6 @@ const tabContents = document.querySelectorAll('.tab-content');
 const cameraGrid = document.getElementById('cameraGrid');
 const eventsGrid = document.getElementById('eventsGrid');
 const protectedGrid = document.getElementById('protectedGrid');
-const filterBtns = document.querySelectorAll('.filter-btn');
 const camCountChip = document.getElementById('camCountChip');
 const storageChip = document.getElementById('storageChip');
 
@@ -50,20 +49,29 @@ function initTabs() {
       btn.classList.add('active');
       document.getElementById(`tab-${targetTab}`).classList.add('active');
 
-      if (targetTab === 'protected') {
+      if (targetTab === 'events') {
+        // Reset active filter to "all" when entering Detection Events tab
+        activeFilter = 'all';
+        const filterBtns = document.querySelectorAll('.filters-bar .filter-btn');
+        filterBtns.forEach(f => f.classList.remove('active'));
+        const allBtn = document.querySelector('.filters-bar .filter-btn[data-filter="all"]');
+        if (allBtn) allBtn.classList.add('active');
+        renderEvents();
+      } else if (targetTab === 'protected') {
         renderProtectedEvents();
       }
     });
   });
 }
 
-// 2. Event Filters
+// 2. Event Filters (Scoped specifically to .filters-bar)
 function initFilters() {
+  const filterBtns = document.querySelectorAll('.filters-bar .filter-btn');
   filterBtns.forEach(btn => {
     btn.addEventListener('click', () => {
       filterBtns.forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      activeFilter = btn.dataset.filter;
+      activeFilter = btn.dataset.filter || 'all';
       renderEvents();
     });
   });
@@ -104,6 +112,47 @@ function initSocketConnection() {
     renderProtectedEvents();
     fetchStorageStats();
   });
+
+  // WebRTC Signaling Receivers from Camera
+  socket.on('webrtc_offer', async (data) => {
+    const { camera_id, offer } = data;
+    console.log(`📥 Received WebRTC Offer from camera ${camera_id}`);
+
+    const conn = peerConnections[camera_id];
+    if (conn && conn.pc) {
+      await conn.pc.setRemoteDescription(new RTCSessionDescription(offer));
+
+      // Flush any queued candidates
+      while (conn.pendingCandidates.length > 0) {
+        const cand = conn.pendingCandidates.shift();
+        await conn.pc.addIceCandidate(new RTCIceCandidate(cand));
+      }
+
+      const answer = await conn.pc.createAnswer();
+      await conn.pc.setLocalDescription(answer);
+
+      socket.emit('webrtc_answer', {
+        camera_id,
+        answer
+      });
+    }
+  });
+
+  socket.on('webrtc_ice_candidate', async (data) => {
+    const { from_id, candidate } = data;
+    // Extract camera_id from socket room tag or id
+    const camera = cameras.find(c => `camera_${c.id}` === from_id || c.id === from_id);
+    const cameraId = camera ? camera.id : Object.keys(peerConnections)[0];
+
+    const conn = peerConnections[cameraId];
+    if (conn && conn.pc && candidate) {
+      if (conn.pc.remoteDescription) {
+        await conn.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        conn.pendingCandidates.push(candidate);
+      }
+    }
+  });
 }
 
 // 4. Cameras & WebRTC Live Feeds
@@ -133,32 +182,35 @@ function renderCameraGrid() {
     return;
   }
 
-  cameraGrid.innerHTML = cameras.map(cam => `
-    <div class="camera-card" id="cam-card-${cam.id}">
-      <div class="camera-header">
-        <div class="camera-title">
-          <span style="width: 10px; height: 10px; border-radius: 50%; background: ${cam.status === 'online' ? '#22c55e' : '#ef4444'}; display: inline-block;"></span>
-          ${cam.name}
-        </div>
-        <span class="meta-chip">${cam.resolution}</span>
-      </div>
-      <div class="video-wrapper">
-        ${cam.status === 'online'
-          ? `<video id="video-feed-${cam.id}" autoplay playsinline muted></video>`
-          : `<div class="camera-offline-msg">📱 Camera Offline</div>`
-        }
-      </div>
-      <div class="camera-footer">
-        <span style="font-size: 0.85rem; color: var(--text-muted);">${cam.battery_level >= 0 ? '🔋 ' + cam.battery_level + '%' : ''}</span>
-        ${cam.status === 'online' ? `
-          <div style="display: flex; gap: 6px;">
-            <button class="filter-btn" onclick="sendControl('${cam.id}', 'toggle_torch')">💡 Torch</button>
-            <button class="filter-btn" onclick="sendControl('${cam.id}', 'switch_lens')">🔄 Flip</button>
+  cameraGrid.innerHTML = cameras.map(cam => {
+    const batText = cam.battery_level >= 0 ? `🔋 ${cam.battery_level}%` : '⚡ Plugged In';
+    return `
+      <div class="camera-card" id="cam-card-${cam.id}">
+        <div class="camera-header">
+          <div class="camera-title">
+            <span style="width: 10px; height: 10px; border-radius: 50%; background: ${cam.status === 'online' ? '#22c55e' : '#ef4444'}; display: inline-block;"></span>
+            ${cam.name}
           </div>
-        ` : ''}
+          <span class="meta-chip">${cam.resolution}</span>
+        </div>
+        <div class="video-wrapper">
+          ${cam.status === 'online'
+            ? `<video id="video-feed-${cam.id}" autoplay playsinline muted></video>`
+            : `<div class="camera-offline-msg">📱 Camera Offline</div>`
+          }
+        </div>
+        <div class="camera-footer">
+          <span style="font-size: 0.85rem; color: var(--text-muted);">${cam.status === 'online' ? batText : 'Offline'}</span>
+          ${cam.status === 'online' ? `
+            <div style="display: flex; gap: 6px;">
+              <button class="filter-btn" style="padding: 6px 12px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'toggle_torch')">💡 Torch</button>
+              <button class="filter-btn" style="padding: 6px 12px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'switch_lens')">🔄 Flip</button>
+            </div>
+          ` : ''}
+        </div>
       </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 
   // Setup WebRTC stream connections for online cameras
   cameras.forEach(cam => {
@@ -169,19 +221,25 @@ function renderCameraGrid() {
 }
 
 function subscribeToWebRTCStream(cameraId) {
-  if (peerConnections[cameraId]) {
-    peerConnections[cameraId].close();
+  if (peerConnections[cameraId] && peerConnections[cameraId].pc) {
+    peerConnections[cameraId].pc.close();
   }
 
   const pc = new RTCPeerConnection({
-    iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
+    iceServers: [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' }
+    ]
   });
-  peerConnections[cameraId] = pc;
+
+  peerConnections[cameraId] = { pc, pendingCandidates: [] };
 
   pc.ontrack = (event) => {
+    console.log(`📺 WebRTC Track received for camera ${cameraId}`);
     const videoEl = document.getElementById(`video-feed-${cameraId}`);
     if (videoEl && event.streams[0]) {
       videoEl.srcObject = event.streams[0];
+      videoEl.play().catch(e => console.warn('Autoplay error:', e));
     }
   };
 
@@ -200,6 +258,7 @@ function subscribeToWebRTCStream(cameraId) {
 
 window.sendControl = function(cameraId, command) {
   if (socket) {
+    console.log(`Sending remote command to ${cameraId}:`, command);
     socket.emit('send_camera_control', { camera_id: cameraId, command });
   }
 };
@@ -369,6 +428,35 @@ async function fetchStorageStats() {
 }
 
 async function initSettings() {
+  try {
+    const res = await fetch('/api/settings');
+    const data = await res.json();
+    if (data.success && data.settings) {
+      const recEnabled = data.settings.recording_enabled !== '0';
+      const toggleEl = document.getElementById('masterRecordingToggle');
+      if (toggleEl) toggleEl.checked = recEnabled;
+    }
+  } catch (e) {
+    console.warn('Error loading settings:', e);
+  }
+
+  const masterToggle = document.getElementById('masterRecordingToggle');
+  if (masterToggle) {
+    masterToggle.addEventListener('change', async () => {
+      const enabled = masterToggle.checked;
+      await fetch('/api/settings', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ settings: { recording_enabled: enabled ? '1' : '0' } })
+      });
+      cameras.forEach(cam => {
+        if (socket) {
+          socket.emit('send_camera_control', { camera_id: cam.id, command: 'toggle_recording' });
+        }
+      });
+    });
+  }
+
   document.getElementById('btnSaveTargetSettings').addEventListener('click', async () => {
     const targets = [];
     if (document.getElementById('targetCat').checked) targets.push('cat');
@@ -377,7 +465,6 @@ async function initSettings() {
     if (document.getElementById('targetVehicle').checked) targets.push('vehicle');
     if (document.getElementById('targetMotion').checked) targets.push('motion');
 
-    // Update setting globally for all connected cameras
     for (const cam of cameras) {
       await fetch(`/api/cameras/${cam.id}/targets`, {
         method: 'PUT',

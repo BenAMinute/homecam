@@ -86,6 +86,7 @@ if (isBetterSqlite) {
 
 // Default settings seed
 const defaultSettings = {
+  recording_enabled: '1',
   retention_days: process.env.RETENTION_DAYS || '14',
   max_storage_gb: process.env.MAX_STORAGE_GB || '50',
   confidence_threshold: process.env.CONFIDENCE_THRESHOLD || '0.65',

@@ -88,8 +88,20 @@
       <div class="settings-grid">
         <!-- Detection Targets Card -->
         <div class="settings-card">
-          <h3>🎯 AI Target Detection Toggles</h3>
-          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;">Select which objects trigger automatic recording and alerts:</p>
+          <h3>🎯 AI Target Detection & Recording Mode</h3>
+          
+          <div class="setting-item" style="border-bottom: 1px solid var(--card-border); padding-bottom: 12px; margin-bottom: 8px;">
+            <div>
+              <span style="font-weight: 600; color: #fff;">🔴 Motion & Event Clip Recording</span>
+              <p style="font-size: 0.8rem; color: var(--text-muted);">Turn OFF to use system purely as Live Cameras without recording video clips.</p>
+            </div>
+            <label class="toggle-switch">
+              <input type="checkbox" id="masterRecordingToggle" checked>
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 10px;">Select which object targets trigger recordings when enabled:</p>
           
           <div class="setting-item">
             <span>🐱 Cat Detection</span>

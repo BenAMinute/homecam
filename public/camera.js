@@ -2,9 +2,13 @@
 
 let socket = null;
 let mediaStream = null;
-let peerConnections = {}; // viewer_id -> RTCPeerConnection
+let peerConnections = {}; // viewer_id -> { pc, pendingCandidates }
 let wakeLock = null;
 let cocoModel = null;
+let isTorchOn = false;
+let currentBatteryLevel = 100;
+let isCharging = true;
+let isRecordingEnabled = true; // Master toggle for motion event recording
 
 let cameraId = localStorage.getItem('homecam_id') || `cam_${Math.random().toString(36).substr(2, 6)}`;
 let cameraName = localStorage.getItem('homecam_name') || 'Phone Camera 1';
@@ -36,6 +40,8 @@ const btnSaveSetup = document.getElementById('btnSaveSetup');
 const btnStealth = document.getElementById('btnStealth');
 const stealthOverlay = document.getElementById('stealthOverlay');
 const btnFlipCam = document.getElementById('btnFlipCam');
+const btnTorchLocal = document.getElementById('btnTorchLocal');
+const btnPauseRecord = document.getElementById('btnPauseRecord');
 const btnSettings = document.getElementById('btnSettings');
 const statusDot = document.getElementById('statusDot');
 const camNameLabel = document.getElementById('camNameLabel');
@@ -107,6 +113,28 @@ btnFlipCam.addEventListener('click', async () => {
   await initCameraStream();
 });
 
+if (btnTorchLocal) {
+  btnTorchLocal.addEventListener('click', async () => {
+    await toggleTorch();
+  });
+}
+
+if (btnPauseRecord) {
+  btnPauseRecord.addEventListener('click', () => {
+    isRecordingEnabled = !isRecordingEnabled;
+    updateRecordingUI();
+  });
+}
+
+function updateRecordingUI() {
+  if (btnPauseRecord) {
+    btnPauseRecord.textContent = isRecordingEnabled ? '🔴 Recording ON' : '⏸️ Recording OFF';
+    btnPauseRecord.style.background = isRecordingEnabled ? '' : 'rgba(245, 158, 11, 0.35)';
+    btnPauseRecord.style.borderColor = isRecordingEnabled ? '' : 'rgba(245, 158, 11, 0.6)';
+  }
+  renderActiveTargetBadges();
+}
+
 // 4. Initialize Camera Stream & TensorFlow AI
 async function startCameraNode() {
   camNameLabel.textContent = cameraName;
@@ -143,6 +171,7 @@ async function initCameraStream() {
     await videoEl.play();
     console.log(`🎥 Camera stream active (${resolution}, ${facingMode})`);
 
+    isTorchOn = false;
     initPreRollRecorder();
     startMotionDetectionLoop();
   } catch (err) {
@@ -151,28 +180,74 @@ async function initCameraStream() {
   }
 }
 
-// 5. Battery Monitoring
+// Flashlight / Torch Controller
+async function toggleTorch(forceState) {
+  if (!mediaStream) return false;
+  const track = mediaStream.getVideoTracks()[0];
+  if (!track) return false;
+
+  try {
+    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+    if ('torch' in capabilities || capabilities.torch) {
+      isTorchOn = forceState !== undefined ? forceState : !isTorchOn;
+      await track.applyConstraints({
+        advanced: [{ torch: isTorchOn }]
+      });
+      console.log('💡 Flashlight / Torch toggled:', isTorchOn);
+      if (btnTorchLocal) {
+        btnTorchLocal.style.background = isTorchOn ? 'var(--accent-amber, #f59e0b)' : '';
+      }
+      return isTorchOn;
+    } else {
+      console.warn('Torch control is not supported by this camera lens or browser.');
+      alert('Torch/Flashlight is not supported on this camera lens (usually only rear camera supports flash).');
+      return false;
+    }
+  } catch (err) {
+    console.error('Error toggling torch:', err);
+    return false;
+  }
+}
+
+// 5. Real Battery Monitoring & Heartbeat
 async function startBatteryMonitoring() {
+  const updateBatteryUI = (pct, charging) => {
+    currentBatteryLevel = pct;
+    isCharging = charging;
+    batteryBadge.textContent = `${charging ? '⚡' : '🔋'} ${pct}%`;
+  };
+
   if ('getBattery' in navigator) {
     try {
       const battery = await navigator.getBattery();
-      const updateBattery = () => {
+      const onBatteryChange = () => {
         const pct = Math.round(battery.level * 100);
-        batteryBadge.textContent = `${battery.charging ? '⚡' : '🔋'} ${pct}%`;
-        if (socket && socket.connected) {
-          socket.emit('camera_heartbeat', {
-            camera_id: cameraId,
-            battery_level: pct,
-            status: 'online'
-          });
-        }
+        updateBatteryUI(pct, battery.charging);
+        sendHeartbeat();
       };
-      updateBattery();
-      battery.addEventListener('levelchange', updateBattery);
-      battery.addEventListener('chargingchange', updateBattery);
+      onBatteryChange();
+      battery.addEventListener('levelchange', onBatteryChange);
+      battery.addEventListener('chargingchange', onBatteryChange);
     } catch (e) {
-      console.warn('Battery API not available');
+      console.warn('Battery API error:', e);
+      updateBatteryUI(100, true);
     }
+  } else {
+    // iOS Safari fallback
+    updateBatteryUI(100, true);
+    batteryBadge.textContent = '⚡ Connected';
+  }
+
+  setInterval(sendHeartbeat, 10000);
+}
+
+function sendHeartbeat() {
+  if (socket && socket.connected) {
+    socket.emit('camera_heartbeat', {
+      camera_id: cameraId,
+      battery_level: currentBatteryLevel,
+      status: 'online'
+    });
   }
 }
 
@@ -188,7 +263,7 @@ function initSocketConnection() {
       camera_id: cameraId,
       name: cameraName,
       resolution: resolution,
-      battery_level: 100
+      battery_level: currentBatteryLevel
     });
   });
 
@@ -205,21 +280,24 @@ function initSocketConnection() {
     }
   });
 
-  // Remote Commands from Viewer
+  socket.on('update_recording_mode', (data) => {
+    if (data.enabled !== undefined) {
+      isRecordingEnabled = data.enabled;
+      updateRecordingUI();
+    }
+  });
+
+  // Remote Commands from Viewer Dashboard
   socket.on('camera_control', async (data) => {
     console.log('Received remote command:', data);
     if (data.command === 'toggle_torch') {
-      const track = mediaStream ? mediaStream.getVideoTracks()[0] : null;
-      if (track && 'applyConstraints' in track) {
-        const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-        if (capabilities.torch) {
-          const currentSetting = track.getConstraints().torch || false;
-          await track.applyConstraints({ advanced: [{ torch: !currentSetting }] });
-        }
-      }
+      await toggleTorch();
     } else if (data.command === 'switch_lens') {
       facingMode = facingMode === 'environment' ? 'user' : 'environment';
       await initCameraStream();
+    } else if (data.command === 'toggle_recording') {
+      isRecordingEnabled = !isRecordingEnabled;
+      updateRecordingUI();
     }
   });
 
@@ -228,14 +306,24 @@ function initSocketConnection() {
     const { viewer_id } = data;
     console.log(`📡 Creating WebRTC connection for viewer ${viewer_id}`);
 
-    const pc = new RTCPeerConnection({
-      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }]
-    });
-    peerConnections[viewer_id] = pc;
+    if (peerConnections[viewer_id] && peerConnections[viewer_id].pc) {
+      peerConnections[viewer_id].pc.close();
+    }
 
-    mediaStream.getTracks().forEach(track => {
-      pc.addTrack(track, mediaStream);
+    const pc = new RTCPeerConnection({
+      iceServers: [
+        { urls: 'stun:stun.l.google.com:19302' },
+        { urls: 'stun:stun1.l.google.com:19302' }
+      ]
     });
+
+    peerConnections[viewer_id] = { pc, pendingCandidates: [] };
+
+    if (mediaStream) {
+      mediaStream.getTracks().forEach(track => {
+        pc.addTrack(track, mediaStream);
+      });
+    }
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
@@ -246,7 +334,10 @@ function initSocketConnection() {
       }
     };
 
-    const offer = await pc.createOffer();
+    const offer = await pc.createOffer({
+      offerToReceiveVideo: false,
+      offerToReceiveAudio: false
+    });
     await pc.setLocalDescription(offer);
 
     socket.emit('webrtc_offer', {
@@ -257,23 +348,36 @@ function initSocketConnection() {
 
   socket.on('webrtc_answer', async (data) => {
     const { viewer_id, answer } = data;
-    const pc = peerConnections[viewer_id];
-    if (pc) {
-      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+    const conn = peerConnections[viewer_id];
+    if (conn && conn.pc) {
+      await conn.pc.setRemoteDescription(new RTCSessionDescription(answer));
+      while (conn.pendingCandidates.length > 0) {
+        const cand = conn.pendingCandidates.shift();
+        await conn.pc.addIceCandidate(new RTCIceCandidate(cand));
+      }
     }
   });
 
   socket.on('webrtc_ice_candidate', async (data) => {
     const { from_id, candidate } = data;
-    const pc = peerConnections[from_id];
-    if (pc && candidate) {
-      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    const conn = peerConnections[from_id];
+    if (conn && conn.pc && candidate) {
+      if (conn.pc.remoteDescription) {
+        await conn.pc.addIceCandidate(new RTCIceCandidate(candidate));
+      } else {
+        conn.pendingCandidates.push(candidate);
+      }
     }
   });
 }
 
 // Render active target badges in UI
 function renderActiveTargetBadges() {
+  if (!isRecordingEnabled) {
+    activeTargetsList.innerHTML = `<span class="target-tag" style="background: rgba(245, 158, 11, 0.25); color: #fcd34d; border-color: rgba(245, 158, 11, 0.5);">⏸️ Live View Only (Recording OFF)</span>`;
+    return;
+  }
+
   const iconMap = {
     cat: '🐱 Cat',
     dog: '🐶 Dog',
@@ -292,8 +396,12 @@ renderActiveTargetBadges();
 async function loadAIModel() {
   try {
     console.log('🧠 Loading TensorFlow.js COCO-SSD object detection model...');
-    cocoModel = await coco-ssd.load({ base: 'lite_mobilenet_v2' });
-    console.log('✅ TensorFlow.js Model loaded successfully!');
+    if (typeof cocoSsd !== 'undefined') {
+      cocoModel = await cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      console.log('✅ TensorFlow.js COCO-SSD Model loaded successfully!');
+    } else {
+      console.warn('cocoSsd global not found');
+    }
   } catch (err) {
     console.error('Failed to load COCO-SSD model:', err);
   }
@@ -313,11 +421,10 @@ function initPreRollRecorder() {
     preRollBuffer = [];
 
     mediaRecorder.ondataavailable = (e) => {
-      if (e.data && e.data.size > 0) {
+      if (e.data && e.data.size > 0 && isRecordingEnabled) {
         if (isRecordingEvent) {
           recordedChunks.push(e.data);
         } else {
-          // Circular buffer: keep last 5 chunks (5 seconds)
           preRollBuffer.push(e.data);
           if (preRollBuffer.length > 5) {
             preRollBuffer.shift();
@@ -326,7 +433,7 @@ function initPreRollRecorder() {
       }
     };
 
-    mediaRecorder.start(1000); // 1 sec timeslices
+    mediaRecorder.start(1000);
     console.log('🎞️ Continuous pre-roll video recorder started');
   } catch (err) {
     console.error('MediaRecorder error:', err);
@@ -336,7 +443,8 @@ function initPreRollRecorder() {
 // Motion Loop (Canvas Pixel Differencing)
 function startMotionDetectionLoop() {
   setInterval(async () => {
-    if (!videoEl.videoWidth || isRecordingEvent) return;
+    // If recording is disabled globally/locally, skip motion calculations completely!
+    if (!videoEl.videoWidth || isRecordingEvent || !isRecordingEnabled) return;
 
     motionCtx.drawImage(videoEl, 0, 0, 64, 64);
     const frame = motionCtx.getImageData(0, 0, 64, 64);
@@ -345,7 +453,7 @@ function startMotionDetectionLoop() {
     let totalDiff = 0;
     if (lastFrameData) {
       for (let i = 0; i < data.length; i += 4) {
-        const diff = Math.abs(data[i] - lastFrameData[i]); // Red channel diff
+        const diff = Math.abs(data[i] - lastFrameData[i]);
         totalDiff += diff;
       }
     }
@@ -353,7 +461,6 @@ function startMotionDetectionLoop() {
 
     const avgDiff = totalDiff / (64 * 64);
 
-    // If canvas difference exceeds motion threshold (~8.0 pixel average delta)
     if (avgDiff > 8.0) {
       console.log(`🏃 Canvas Motion Detected (delta: ${avgDiff.toFixed(1)})`);
 
@@ -362,7 +469,6 @@ function startMotionDetectionLoop() {
         return;
       }
 
-      // If AI object classification is enabled & model is ready, run COCO-SSD inference!
       if (cocoModel) {
         const predictions = await cocoModel.detect(videoEl);
         for (const pred of predictions) {
@@ -375,7 +481,7 @@ function startMotionDetectionLoop() {
         }
       }
     }
-  }, 600); // check 1.6 times per sec
+  }, 600);
 }
 
 function mapCocoClassToTarget(cocoClass) {
@@ -388,22 +494,21 @@ function mapCocoClassToTarget(cocoClass) {
 
 // Trigger Event Recording & Server Upload
 async function triggerEventRecording(eventType, confidence) {
+  if (!isRecordingEnabled) return;
+
   const now = Date.now();
-  if (now - lastEventUploadTime < 15000) return; // 15 sec cooldown per event
+  if (now - lastEventUploadTime < 15000) return;
   lastEventUploadTime = now;
 
   console.log(`🔴 Triggering Clip Recording for [${eventType.toUpperCase()}]`);
   isRecordingEvent = true;
 
-  // Combine pre-roll buffer with current recording
   recordedChunks = [...preRollBuffer];
 
-  // Highlight active badge
   const iconMap = { cat: '🐱 Cat', dog: '🐶 Dog', person: '👤 Human', vehicle: '🚗 Vehicle', motion: '🏃 Motion' };
   const badgeHTML = `<span class="target-tag recording">🔴 RECORDING: ${iconMap[eventType] || eventType}</span>`;
   activeTargetsList.innerHTML = badgeHTML;
 
-  // Record for 8 seconds after trigger
   setTimeout(async () => {
     isRecordingEvent = false;
     renderActiveTargetBadges();
@@ -412,7 +517,6 @@ async function triggerEventRecording(eventType, confidence) {
     recordedChunks = [];
     preRollBuffer = [];
 
-    // Upload clip to server
     const formData = new FormData();
     formData.append('video', videoBlob, `event_${eventType}_${now}.webm`);
     formData.append('camera_id', cameraId);
