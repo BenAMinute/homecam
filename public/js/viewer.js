@@ -211,8 +211,7 @@ function renderCameraGrid() {
           <span style="font-size: 0.85rem; color: var(--text-muted);">${cam.status === 'online' ? batText : 'Offline'}</span>
           <div style="display: flex; gap: 6px; align-items: center;">
             ${cam.status === 'online' ? `
-              <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'toggle_torch')">💡 Torch</button>
-              <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'switch_lens')">🔄 Flip</button>
+              <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'switch_lens')">📷 Switch Lens</button>
             ` : ''}
             <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem; border-color: rgba(244, 63, 94, 0.4); color: #fda4af;" onclick="removeCamera('${cam.id}', '${cam.name}')">🗑️ Remove</button>
           </div>

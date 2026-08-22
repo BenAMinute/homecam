@@ -36,7 +36,7 @@
 
 1. Clone the repository to your home server:
    ```bash
-   git clone https://github.com/your-username/homecam.git
+   git clone https://github.com/BenAMinute/homecam.git
    cd homecam
    ```
 
