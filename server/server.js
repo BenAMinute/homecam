@@ -67,6 +67,23 @@ app.delete('/api/cameras/:id', async (req, res) => {
   }
 });
 
+app.put('/api/cameras/:id/rotate', async (req, res) => {
+  try {
+    const camId = req.params.id;
+    const camera = await db.getCamera(camId);
+    if (!camera) return res.status(404).json({error: 'Camera not found'});
+    
+    const newRotation = ((camera.rotation || 0) + 90) % 360;
+    await db.updateCameraRotation(camId, newRotation);
+    
+    const updatedCam = await db.getCamera(camId);
+    io.emit('camera_status_change', updatedCam);
+    res.json({ success: true, rotation: newRotation });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 app.put('/api/cameras/:id/targets', async (req, res) => {
   try {
     const { targets } = req.body;

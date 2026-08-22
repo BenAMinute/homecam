@@ -211,6 +211,7 @@ function renderCameraGrid() {
           <span style="font-size: 0.85rem; color: var(--text-muted);">${cam.status === 'online' ? batText : 'Offline'}</span>
           <div style="display: flex; gap: 6px; align-items: center;">
             ${cam.status === 'online' ? `
+              <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="rotateCamera('${cam.id}')">🔄 Rotate</button>
               <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem;" onclick="sendControl('${cam.id}', 'switch_lens')">📷 Switch Lens</button>
             ` : ''}
             <button class="filter-btn" style="padding: 6px 10px; font-size: 0.8rem; border-color: rgba(244, 63, 94, 0.4); color: #fda4af;" onclick="removeCamera('${cam.id}', '${cam.name}')">🗑️ Remove</button>
@@ -225,6 +226,11 @@ function renderCameraGrid() {
     if (cam.status === 'online') {
       const conn = peerConnections[cam.id];
       const videoEl = document.getElementById(`video-feed-${cam.id}`);
+      if (videoEl) {
+        const rot = cam.rotation || 0;
+        const scale = (rot === 90 || rot === 270) ? 'scale(0.5625)' : '';
+        videoEl.style.transform = `rotate(${rot}deg) ${scale}`;
+      }
       if (conn && conn.stream && videoEl) {
         videoEl.srcObject = conn.stream;
         videoEl.play().catch(e => console.warn('Autoplay error:', e));
@@ -256,6 +262,12 @@ function subscribeToWebRTCStream(cameraId) {
     }
     const videoEl = document.getElementById(`video-feed-${cameraId}`);
     if (videoEl && event.streams[0]) {
+      const cam = cameras.find(c => c.id === cameraId);
+      if (cam) {
+        const rot = cam.rotation || 0;
+        const scale = (rot === 90 || rot === 270) ? 'scale(0.5625)' : '';
+        videoEl.style.transform = `rotate(${rot}deg) ${scale}`;
+      }
       videoEl.srcObject = event.streams[0];
       videoEl.play().catch(e => console.warn('Autoplay error:', e));
     }
@@ -277,6 +289,27 @@ window.sendControl = function(cameraId, command) {
   if (socket) {
     console.log(`Sending remote command to ${cameraId}:`, command);
     socket.emit('send_camera_control', { camera_id: cameraId, command });
+  }
+};
+
+window.rotateCamera = async function(cameraId) {
+  try {
+    const res = await fetch(`/api/cameras/${cameraId}/rotate`, { method: 'PUT' });
+    const data = await res.json();
+    if (data.success) {
+      const cam = cameras.find(c => c.id === cameraId);
+      if (cam) {
+        cam.rotation = data.rotation;
+        const videoEl = document.getElementById(`video-feed-${cameraId}`);
+        if (videoEl) {
+          const rot = cam.rotation || 0;
+          const scale = (rot === 90 || rot === 270) ? 'scale(0.5625)' : '';
+          videoEl.style.transform = `rotate(${rot}deg) ${scale}`;
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error rotating:', err);
   }
 };
 

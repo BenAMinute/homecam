@@ -54,6 +54,7 @@ const schemaSQL = `
     battery_level INTEGER DEFAULT -1,
     resolution TEXT DEFAULT '720p',
     enabled_targets TEXT DEFAULT '["cat","person","motion"]',
+    rotation INTEGER DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -80,8 +81,11 @@ const schemaSQL = `
 
 if (isBetterSqlite) {
   dbInstance.exec(schemaSQL);
+  try { dbInstance.exec('ALTER TABLE cameras ADD COLUMN rotation INTEGER DEFAULT 0'); } catch(e) {}
 } else {
-  dbInstance.exec(schemaSQL).catch(err => console.error('DB schema error:', err));
+  dbInstance.exec(schemaSQL).then(() => {
+    return dbInstance.exec('ALTER TABLE cameras ADD COLUMN rotation INTEGER DEFAULT 0').catch(() => {});
+  }).catch(err => console.error('DB schema error:', err));
 }
 
 // Default settings seed
@@ -133,6 +137,11 @@ module.exports = {
   async updateCameraTargets(id, enabledTargets) {
     const stmt = dbInstance.prepare('UPDATE cameras SET enabled_targets = ? WHERE id = ?');
     return await stmt.run(JSON.stringify(enabledTargets), id);
+  },
+
+  async updateCameraRotation(id, rotation) {
+    const stmt = dbInstance.prepare('UPDATE cameras SET rotation = ? WHERE id = ?');
+    return await stmt.run(rotation, id);
   },
 
   async deleteCamera(id) {
