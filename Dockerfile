@@ -1,8 +1,8 @@
 # HomeCam Docker Container Build
 FROM node:20-alpine
 
-# Build essentials for better-sqlite3 native compilation if needed
-RUN apk add --no-qualitative --no-cache python3 make g++ gcc
+# Build essentials for native compilation if needed
+RUN apk add --no-cache python3 make g++ gcc
 
 WORKDIR /app
 
