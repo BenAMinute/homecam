@@ -552,7 +552,7 @@ async function initSettings() {
     });
   }
 
-  document.getElementById('btnSaveTargetSettings').addEventListener('click', async () => {
+  const saveTargets = async () => {
     const targets = [];
     if (document.getElementById('targetCat').checked) targets.push('cat');
     if (document.getElementById('targetPerson').checked) targets.push('person');
@@ -565,9 +565,13 @@ async function initSettings() {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ targets })
     });
+  };
 
-    alert('✅ AI Target Detection Settings updated for all camera nodes!');
-  });
+  document.getElementById('targetCat').addEventListener('change', saveTargets);
+  document.getElementById('targetPerson').addEventListener('change', saveTargets);
+  document.getElementById('targetDog').addEventListener('change', saveTargets);
+  document.getElementById('targetVehicle').addEventListener('change', saveTargets);
+  document.getElementById('targetMotion').addEventListener('change', saveTargets);
 
   document.getElementById('btnSaveStorageSettings').addEventListener('click', async () => {
     const retention_days = document.getElementById('inputRetentionDays').value;

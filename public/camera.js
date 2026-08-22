@@ -43,7 +43,6 @@ const selectRes = document.getElementById('selectRes');
 const btnSaveSetup = document.getElementById('btnSaveSetup');
 const btnStealth = document.getElementById('btnStealth');
 const stealthOverlay = document.getElementById('stealthOverlay');
-const btnFlipCam = document.getElementById('btnFlipCam');
 const btnTorchLocal = document.getElementById('btnTorchLocal');
 const btnPauseRecord = document.getElementById('btnPauseRecord');
 const btnSettings = document.getElementById('btnSettings');
@@ -116,21 +115,7 @@ btnSaveSetup.addEventListener('click', () => {
   startCameraNode();
 });
 
-btnFlipCam.addEventListener('click', async () => {
-  if (availableDevices.length > 1) {
-    // Cycle to next physical lens (Ultra-Wide -> Main -> Zoom -> Selfie)
-    const currentIdx = availableDevices.findIndex(d => d.deviceId === selectedDeviceId);
-    const nextIdx = (currentIdx + 1) % availableDevices.length;
-    selectedDeviceId = availableDevices[nextIdx].deviceId;
-    localStorage.setItem('homecam_device_id', selectedDeviceId);
-    if (selectDevice) selectDevice.value = selectedDeviceId;
-    console.log(`🔄 Switched to camera lens [${nextIdx + 1}/${availableDevices.length}]:`, availableDevices[nextIdx].label);
-  } else {
-    facingMode = facingMode === 'environment' ? 'user' : 'environment';
-    localStorage.setItem('homecam_facing', facingMode);
-  }
-  await initCameraStream();
-});
+// removed btnFlipCam logic
 
 if (btnTorchLocal) {
   btnTorchLocal.addEventListener('click', async () => {
@@ -245,40 +230,32 @@ async function toggleTorch(forceState) {
   const targetState = forceState !== undefined ? forceState : !isTorchOn;
 
   try {
-    await track.applyConstraints({
-      advanced: [{ torch: targetState }]
-    });
-    isTorchOn = targetState;
-    console.log('💡 Flashlight / Torch toggled successfully:', isTorchOn);
-    if (btnTorchLocal) {
-      btnTorchLocal.style.background = isTorchOn ? 'var(--accent-amber, #f59e0b)' : '';
-    }
-    return isTorchOn;
-  } catch (err) {
-    console.warn('Direct torch constraint attempt failed, trying capability check fallback:', err);
-    try {
-      const capabilities = track.getCapabilities ? track.getCapabilities() : {};
-      if ('torch' in capabilities || capabilities.torch) {
-        await track.applyConstraints({
-          advanced: [{ torch: targetState }]
-        });
-        isTorchOn = targetState;
-        if (btnTorchLocal) {
-          btnTorchLocal.style.background = isTorchOn ? 'var(--accent-amber, #f59e0b)' : '';
-        }
-        return isTorchOn;
+    const capabilities = track.getCapabilities ? track.getCapabilities() : {};
+    
+    // Only apply torch if the browser explicitly reports this specific track supports it
+    // Applying torch blindly to tracks that don't support it causes Android Chrome to switch physical lenses automatically.
+    if ('torch' in capabilities || capabilities.torch) {
+      await track.applyConstraints({
+        advanced: [{ torch: targetState }]
+      });
+      isTorchOn = targetState;
+      console.log('💡 Flashlight / Torch toggled successfully:', isTorchOn);
+      if (btnTorchLocal) {
+        btnTorchLocal.style.background = isTorchOn ? 'var(--accent-amber, #f59e0b)' : '';
       }
-    } catch (err2) {
-      console.warn('Torch capability fallback also failed:', err2);
+      return isTorchOn;
+    } else {
+      console.warn('Flashlight is not available on this specific camera lens.');
+      if (btnTorchLocal) {
+        btnTorchLocal.style.background = 'rgba(239, 68, 68, 0.3)';
+        setTimeout(() => {
+          btnTorchLocal.style.background = '';
+        }, 1500);
+      }
+      return false;
     }
-
-    console.warn('Flashlight is not available on this specific camera lens.');
-    if (btnTorchLocal) {
-      btnTorchLocal.style.background = 'rgba(239, 68, 68, 0.3)';
-      setTimeout(() => {
-        btnTorchLocal.style.background = '';
-      }, 1500);
-    }
+  } catch (err) {
+    console.error('Torch error:', err);
     return false;
   }
 }
