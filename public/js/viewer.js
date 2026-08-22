@@ -561,6 +561,8 @@ async function initSettings() {
         } catch (err) {
           console.warn('Error parsing global_targets:', err);
         }
+      }
+
       if (data.settings.confidence_threshold) {
         const confInput = document.getElementById('inputConfidence');
         const confLbl = document.getElementById('lblConfidence');
