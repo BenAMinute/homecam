@@ -504,6 +504,22 @@ async function initSettings() {
       const recEnabled = data.settings.recording_enabled !== '0';
       const toggleEl = document.getElementById('masterRecordingToggle');
       if (toggleEl) toggleEl.checked = recEnabled;
+
+      if (data.settings.global_targets) {
+        try {
+          const globalTargets = typeof data.settings.global_targets === 'string'
+            ? JSON.parse(data.settings.global_targets)
+            : data.settings.global_targets;
+
+          document.getElementById('targetCat').checked = globalTargets.includes('cat');
+          document.getElementById('targetPerson').checked = globalTargets.includes('person');
+          document.getElementById('targetDog').checked = globalTargets.includes('dog');
+          document.getElementById('targetVehicle').checked = globalTargets.includes('vehicle');
+          document.getElementById('targetMotion').checked = globalTargets.includes('motion');
+        } catch (err) {
+          console.warn('Error parsing global_targets:', err);
+        }
+      }
     }
   } catch (e) {
     console.warn('Error loading settings:', e);
@@ -534,13 +550,12 @@ async function initSettings() {
     if (document.getElementById('targetVehicle').checked) targets.push('vehicle');
     if (document.getElementById('targetMotion').checked) targets.push('motion');
 
-    for (const cam of cameras) {
-      await fetch(`/api/cameras/${cam.id}/targets`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ targets })
-      });
-    }
+    await fetch('/api/targets/global', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targets })
+    });
+
     alert('✅ AI Target Detection Settings updated for all camera nodes!');
   });
 

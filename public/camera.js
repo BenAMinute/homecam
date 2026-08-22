@@ -17,7 +17,7 @@ let cameraName = localStorage.getItem('homecam_name') || 'Phone Camera 1';
 let facingMode = localStorage.getItem('homecam_facing') || 'environment';
 let resolution = localStorage.getItem('homecam_res') || '720p';
 
-let enabledTargets = ['cat', 'person', 'motion']; // default targets
+let enabledTargets = []; // Populated via socket update_targets from server
 let confidenceThreshold = 0.60;
 
 // MediaRecorder Ring Buffer state

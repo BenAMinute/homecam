@@ -80,6 +80,25 @@ app.put('/api/cameras/:id/targets', async (req, res) => {
   }
 });
 
+app.put('/api/targets/global', async (req, res) => {
+  try {
+    const { targets } = req.body;
+    await db.updateSetting('global_targets', JSON.stringify(targets));
+
+    const cameras = await db.getAllCameras();
+    for (const cam of cameras) {
+      await db.updateCameraTargets(cam.id, targets);
+    }
+
+    // Broadcast target update to all connected camera nodes
+    io.emit('update_targets', { targets });
+    console.log('🎯 Global Target Settings updated for all camera nodes:', targets);
+    res.json({ success: true, targets });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
 // Events API
 app.get('/api/events', async (req, res) => {
   try {
@@ -245,7 +264,12 @@ io.on('connection', (socket) => {
     await db.upsertCamera(camera_id, name || `Camera ${camera_id}`, resolution, battery_level);
     const camera = await db.getCamera(camera_id);
 
-    console.log(`📱 Camera Node registered: "${camera.name}" (${camera_id})`);
+    // Immediately send target configuration to newly connected camera node
+    if (camera && camera.enabled_targets) {
+      socket.emit('update_targets', { targets: camera.enabled_targets });
+    }
+
+    console.log(`📱 Camera Node registered: "${camera.name}" (${camera_id}) with targets:`, camera.enabled_targets);
     io.emit('camera_status_change', camera);
   });
 
